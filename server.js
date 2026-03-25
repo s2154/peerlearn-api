@@ -87,7 +87,7 @@ app.get('/send-otp', async (req, res) => {
 // 🔥 VERIFY OTP
 // ==============================
 app.get('/verify-otp', (req, res) => {
-    const { email, otp, username, password } = req.query;
+    const { email, otp, username, password, firstName, lastName } = req.query;
 
     const record = otpStore[email];
 
@@ -105,10 +105,9 @@ app.get('/verify-otp', (req, res) => {
         const type = record.type;
         delete otpStore[email];
 
-        // 🟢 REGISTER FLOW
         if (type === "register") {
 
-            if (!username || !password) {
+            if (!username || !password || !firstName || !lastName) {
                 return res.status(400).json({ message: "Missing fields ❌" });
             }
 
@@ -120,11 +119,11 @@ app.get('/verify-otp', (req, res) => {
                 }
 
                 const sql = `
-                    INSERT INTO users (username, email, password_hash)
-                    VALUES (?, ?, ?)
+                    INSERT INTO users (username, email, password_hash, first_name, last_name)
+                    VALUES (?, ?, ?, ?, ?)
                 `;
 
-                db.query(sql, [username, email, password], (err) => {
+                db.query(sql, [username, email, password, firstName, lastName], (err) => {
                     if (err) {
                         console.log(err);
                         return res.status(500).json({ message: "Signup failed ❌" });
@@ -135,7 +134,6 @@ app.get('/verify-otp', (req, res) => {
             });
         }
 
-        // 🟡 FORGOT PASSWORD FLOW
         else if (type === "forgot") {
             return res.json({ message: "OTP verified, reset allowed ✅" });
         }
