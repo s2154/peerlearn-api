@@ -58,15 +58,19 @@ app.get('/send-otp', async (req, res) => {
 
     try {
         let transporter = nodemailer.createTransport({
-            service: 'gmail',
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true,
             auth: {
                 user: 'sotp2154@gmail.com',
-                pass: 'fhuv edqv sulb njah'
+                pass: 'womx ciwq sxyr mlyo'  // ← Replace with your new Gmail App Password
             }
         });
 
+        await transporter.verify();  // ← Shows exact error in Render logs if Gmail rejects
+
         await transporter.sendMail({
-            from: '"PeerLearn" <sotp2154@gmail.com>', // ✅ FIXED
+            from: '"PeerLearn" <sotp2154@gmail.com>',
             to: email,
             subject: 'PeerLearn OTP',
             text: `Your OTP is: ${otp}`
@@ -77,8 +81,10 @@ app.get('/send-otp', async (req, res) => {
         res.json({ message: 'OTP sent ✅' });
 
     } catch (error) {
-        console.log("OTP ERROR:", error);
-        res.status(500).json({ message: 'OTP failed ❌' });
+        console.log("OTP ERROR CODE:", error.code);
+        console.log("OTP ERROR MESSAGE:", error.message);
+        console.log("OTP RESPONSE:", error.response);
+        res.status(500).json({ message: 'OTP failed ❌', error: error.message });
     }
 });
 
