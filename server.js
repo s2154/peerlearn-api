@@ -2,7 +2,8 @@ const express = require('express');
 const mysql = require('mysql2');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
+const resend = new Resend('re_KsPSm16u_PzEra6G39ojXsbN63Vz6LUmZ'); // 🔑 paste your key
 
 const app = express();
 
@@ -57,24 +58,12 @@ app.get('/send-otp', async (req, res) => {
     };
 
     try {
-        let transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 587,
-            secure: false,
-            family: 4,   
-            auth: {
-                user: 'sotp2154@gmail.com',
-                pass: 'womx ciwq sxyr mlyo'  // ← Replace with your new Gmail App Password
-            }
-        });
 
-        await transporter.verify();  // ← Shows exact error in Render logs if Gmail rejects
-
-        await transporter.sendMail({
-            from: '"PeerLearn" <sotp2154@gmail.com>',
+        await resend.emails.send({
+            from: 'onboarding@resend.dev',
             to: email,
             subject: 'PeerLearn OTP',
-            text: `Your OTP is: ${otp}`
+            html: `<h2>Your OTP is: ${otp}</h2>`
         });
 
         console.log("OTP sent to:", email);
@@ -82,10 +71,11 @@ app.get('/send-otp', async (req, res) => {
         res.json({ message: 'OTP sent ✅' });
 
     } catch (error) {
-        console.log("OTP ERROR CODE:", error.code);
-        console.log("OTP ERROR MESSAGE:", error.message);
-        console.log("OTP RESPONSE:", error.response);
-        res.status(500).json({ message: 'OTP failed ❌', error: error.message });
+        console.log("OTP ERROR:", error);
+        res.status(500).json({
+            message: 'OTP failed ❌',
+            error: error.message
+        });
     }
 });
 
