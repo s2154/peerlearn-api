@@ -59,8 +59,8 @@ app.get('/send-otp', async (req, res) => {
     try {
         let transporter = nodemailer.createTransport({
             host: 'smtp.gmail.com',
-            port: 465,
-            secure: true,
+            port: 587,
+            secure: false,
             auth: {
                 user: 'sotp2154@gmail.com',
                 pass: 'womx ciwq sxyr mlyo'  // ← Replace with your new Gmail App Password
