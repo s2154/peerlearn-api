@@ -2,6 +2,7 @@ const express = require('express');
 const mysql = require('mysql2');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const nodemailer = require('nodemailer');
 
 const app = express();
 
@@ -10,12 +11,15 @@ app.use(express.json());
 
 const SECRET_KEY = "mysecretkey";
 
-// ✅ UPDATED: Use ONLINE DATABASE (NOT localhost)
+// 🔐 OTP Store
+const otpStore = {};
+
+// ✅ DATABASE
 const db = mysql.createConnection({
-    host: 'sql12.freesqldatabase.com',   // 🔥 REPLACE
-    user: 'sql12821119',                 // 🔥 YOUR USER
-    password: 'GEE7CSYNkE',           // 🔥 REPLACE
-    database: 'sql12821119'              // 🔥 YOUR DB
+    host: 'sql12.freesqldatabase.com',
+    user: 'sql12821119',
+    password: 'GEE7CSYNkE',
+    database: 'sql12821119'
 });
 
 // Connect DB
@@ -27,66 +31,130 @@ db.connect((err) => {
     }
 });
 
-// USERS API
-app.get('/users', (req, res) => {
-    db.query('SELECT * FROM users', (err, result) => {
-        if (err) {
-            res.send(err);
-        } else {
-            res.json(result);
-        }
-    });
+// ==============================
+// ROOT
+// ==============================
+app.get('/', (req, res) => {
+    res.send('PeerLearn Backend Running 🚀');
 });
 
-// REGISTER
-app.get('/signup', (req, res) => {
-    const { username, email, password, first_name, last_name } = req.query;
+// ==============================
+// 🔥 SEND OTP (REGISTER / FORGOT)
+// ==============================
+app.get('/send-otp', async (req, res) => {
+    const { email, type } = req.query;
 
-    if (!username || !email || !password) {
-        return res.status(400).json({ message: 'Missing fields ❌' });
+    if (!email || !type) {
+        return res.status(400).json({ message: 'Email & type required ❌' });
     }
 
-    const checkSql = 'SELECT * FROM users WHERE email = ?';
+    const otp = Math.floor(100000 + Math.random() * 900000);
 
-    db.query(checkSql, [email], (err, result) => {
-        if (err) {
-            return res.status(500).json({ message: 'Server error ❌' });
-        }
+    otpStore[email] = {
+        otp,
+        type,
+        expiresAt: Date.now() + 5 * 60 * 1000
+    };
 
-        if (result.length > 0) {
-            return res.status(400).json({ message: 'Email already exists ❌' });
-        }
-
-        const sql = `
-            INSERT INTO users (username, email, password_hash, first_name, last_name)
-            VALUES (?, ?, ?, ?, ?)
-        `;
-
-        db.query(sql, [username, email, password, first_name, last_name], (err) => {
-            if (err) {
-                return res.status(500).json({ message: 'Signup failed ❌' });
+    try {
+        let transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: 'sotp2154@gmail.com',
+                pass: 'fhuv edqv sulb njah'
             }
-
-            res.json({ message: 'Signup successful ✅' });
         });
-    });
+
+        await transporter.sendMail({
+            from: '"PeerLearn" <sotp2154@gmail.com>', // ✅ FIXED
+            to: email,
+            subject: 'PeerLearn OTP',
+            text: `Your OTP is: ${otp}`
+        });
+
+        console.log("OTP sent to:", email);
+
+        res.json({ message: 'OTP sent ✅' });
+
+    } catch (error) {
+        console.log("OTP ERROR:", error);
+        res.status(500).json({ message: 'OTP failed ❌' });
+    }
 });
 
-// LOGIN
+// ==============================
+// 🔥 VERIFY OTP
+// ==============================
+app.get('/verify-otp', (req, res) => {
+    const { email, otp, username, password } = req.query;
+
+    const record = otpStore[email];
+
+    if (!record) {
+        return res.status(400).json({ message: "No OTP found ❌" });
+    }
+
+    if (Date.now() > record.expiresAt) {
+        delete otpStore[email];
+        return res.status(400).json({ message: "OTP expired ⏳" });
+    }
+
+    if (record.otp == otp) {
+
+        const type = record.type;
+        delete otpStore[email];
+
+        // 🟢 REGISTER FLOW
+        if (type === "register") {
+
+            if (!username || !password) {
+                return res.status(400).json({ message: "Missing fields ❌" });
+            }
+
+            const checkSql = "SELECT * FROM users WHERE email = ?";
+            db.query(checkSql, [email], (err, result) => {
+
+                if (result.length > 0) {
+                    return res.status(400).json({ message: "User already exists ❌" });
+                }
+
+                const sql = `
+                    INSERT INTO users (username, email, password_hash)
+                    VALUES (?, ?, ?)
+                `;
+
+                db.query(sql, [username, email, password], (err) => {
+                    if (err) {
+                        console.log(err);
+                        return res.status(500).json({ message: "Signup failed ❌" });
+                    }
+
+                    return res.json({ message: "Account created ✅" });
+                });
+            });
+        }
+
+        // 🟡 FORGOT PASSWORD FLOW
+        else if (type === "forgot") {
+            return res.json({ message: "OTP verified, reset allowed ✅" });
+        }
+
+    } else {
+        res.status(400).json({ message: "Invalid OTP ❌" });
+    }
+});
+
+// ==============================
+// 🔵 LOGIN
+// ==============================
 app.get('/login', (req, res) => {
     const { email, password } = req.query;
 
     const sql = 'SELECT * FROM users WHERE email = ? AND password_hash = ?';
 
     db.query(sql, [email, password], (err, result) => {
-        if (err) {
-            return res.status(500).json({ message: 'Server error ❌' });
-        }
-
         if (result.length === 0) {
-            return res.status(401).json({
-                message: 'Invalid email or password ❌'
-            });
+            return res.status(401).json({ message: 'Invalid credentials ❌' });
         }
 
         const user = result[0];
@@ -99,48 +167,34 @@ app.get('/login', (req, res) => {
 
         res.json({
             message: 'Login success ✅',
-            token: token,
-            user: user
+            token,
+            user
         });
     });
 });
 
-// TOKEN VERIFY
-function verifyToken(req, res, next) {
-    const header = req.headers['authorization'];
+// ==============================
+// 🔴 RESET PASSWORD
+// ==============================
+app.get('/reset-password', (req, res) => {
+    const { email, newPassword } = req.query;
 
-    if (!header) {
-        return res.status(401).send('No token ❌');
-    }
+    const sql = "UPDATE users SET password_hash = ? WHERE email = ?";
 
-    const token = header.split(' ')[1];
-
-    jwt.verify(token, SECRET_KEY, (err, decoded) => {
+    db.query(sql, [newPassword, email], (err) => {
         if (err) {
-            return res.status(403).send('Invalid token ❌');
+            return res.status(500).json({ message: "Reset failed ❌" });
         }
 
-        req.user = decoded;
-        next();
-    });
-}
-
-// PROTECTED
-app.get('/profile', verifyToken, (req, res) => {
-    res.json({
-        message: 'Protected data ✅',
-        user: req.user
+        res.json({ message: "Password updated ✅" });
     });
 });
 
-// ROOT
-app.get('/', (req, res) => {
-    res.send('PeerLearn Backend Running 🚀');
-});
-
-// ✅ IMPORTANT FOR RENDER
+// ==============================
+// SERVER
+// ==============================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT} 🚀`);
 });
