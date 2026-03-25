@@ -61,6 +61,7 @@ app.get('/send-otp', async (req, res) => {
             host: 'smtp.gmail.com',
             port: 587,
             secure: false,
+            family: 4,   
             auth: {
                 user: 'sotp2154@gmail.com',
                 pass: 'womx ciwq sxyr mlyo'  // ← Replace with your new Gmail App Password
