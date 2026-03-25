@@ -61,14 +61,18 @@ app.get('/send-otp', async (req, res) => {
 
         await resend.emails.send({
             from: 'onboarding@resend.dev',
-            to: email,
+            to: 'sotp2154@gmail.com',   // ✅ FIXED EMAIL (IMPORTANT)
             subject: 'PeerLearn OTP',
             html: `<h2>Your OTP is: ${otp}</h2>`
         });
 
-        console.log("OTP sent to:", email);
+        console.log("OTP sent to (your inbox): sotp2154@gmail.com");
+        console.log("User entered email:", email);
 
-        res.json({ message: 'OTP sent ✅' });
+        res.json({
+            message: 'OTP sent ✅',
+            otp: otp   // ✅ ADD THIS (for demo/testing)
+        });
 
     } catch (error) {
         console.log("OTP ERROR:", error);
