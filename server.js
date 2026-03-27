@@ -1,3 +1,4 @@
+require('dotenv').config();   // 👈 ADD THIS LINE
 const express = require('express');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
@@ -16,22 +17,19 @@ const SECRET_KEY = "mysecretkey_changeme";
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'sotp2154@gmail.com',        // ← your Gmail here
-        pass: 'kmaf zise skau pema'        // ← your 16-char app password here
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_PASS
     }
 });
 // ==============================
 // 🗄️ SUPABASE (PostgreSQL) SETUP
 // ==============================
 const db = new Pool({
-    host: 'db.awubpngijupbkhetxsmr.supabase.co',
-    user: 'postgres',
-    password: '73LSjW9ARuB90eay',
-    database: 'postgres',
-    port: 5432,
-    ssl: { rejectUnauthorized: false }
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
-
 db.connect((err) => {
     if (err) {
         console.log('❌ Supabase DB connection error:', err.message);
