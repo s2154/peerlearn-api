@@ -1,36 +1,49 @@
 const express = require('express');
-const mysql = require('mysql2');
+const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const { Resend } = require('resend');
-const resend = new Resend('re_KsPSm16u_PzEra6G39ojXsbN63Vz6LUmZ'); // 🔑 paste your key
+const nodemailer = require('nodemailer');
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
-const SECRET_KEY = "mysecretkey";
+const SECRET_KEY = "mysecretkey_changeme";
 
-// 🔐 OTP Store
-const otpStore = {};
-
-// ✅ DATABASE
-const db = mysql.createConnection({
-    host: 'sql12.freesqldatabase.com',
-    user: 'sql12821119',
-    password: 'GEE7CSYNkE',
-    database: 'sql12821119'
-});
-
-// Connect DB
-db.connect((err) => {
-    if (err) {
-        console.log('DB connection error:', err);
-    } else {
-        console.log('MySQL Connected ✅');
+// ==============================
+// 📧 NODEMAILER (Gmail) SETUP
+// ==============================
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'sotp2154@gmail.com',        // ← your Gmail here
+        pass: 'kmaf zise skau pema'        // ← your 16-char app password here
     }
 });
+// ==============================
+// 🗄️ SUPABASE (PostgreSQL) SETUP
+// ==============================
+const db = new Pool({
+    host: 'db.awubpngijupbkhetxsmr.supabase.co',
+    user: 'postgres',
+    password: '73LSjW9ARuB90eay',
+    database: 'postgres',
+    port: 5432,
+    ssl: { rejectUnauthorized: false }
+});
+
+db.connect((err) => {
+    if (err) {
+        console.log('❌ Supabase DB connection error:', err.message);
+    } else {
+        console.log('✅ Supabase PostgreSQL Connected!');
+    }
+});
+
+// ==============================
+// 🔐 OTP Store (In-memory)
+// ==============================
+const otpStore = {};
 
 // ==============================
 // ROOT
@@ -40,7 +53,7 @@ app.get('/', (req, res) => {
 });
 
 // ==============================
-// 🔥 SEND OTP (REGISTER / FORGOT)
+// 🔥 SEND OTP
 // ==============================
 app.get('/send-otp', async (req, res) => {
     const { email, type } = req.query;
@@ -57,106 +70,105 @@ app.get('/send-otp', async (req, res) => {
         expiresAt: Date.now() + 5 * 60 * 1000
     };
 
+    const mailOptions = {
+        from: `"PeerLearn 🎓" <${process.env.GMAIL_USER}>`,
+        to: email,
+        subject: 'PeerLearn - Your OTP Code',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 400px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                <h2 style="color: #4f46e5;">PeerLearn 🎓</h2>
+                <p>Hello! Your One-Time Password is:</p>
+                <h1 style="letter-spacing: 8px; color: #4f46e5;">${otp}</h1>
+                <p style="color: #888;">This OTP is valid for <strong>5 minutes</strong>. Do not share it with anyone.</p>
+            </div>
+        `
+    };
+
     try {
-
-        await resend.emails.send({
-            from: 'onboarding@resend.dev',
-            to: 'sotp2154@gmail.com',   // ✅ FIXED EMAIL (IMPORTANT)
-            subject: 'PeerLearn OTP',
-            html: `<h2>Your OTP is: ${otp}</h2>`
-        });
-
-        console.log("OTP sent to (your inbox): sotp2154@gmail.com");
-        console.log("User entered email:", email);
-
-        res.json({
-            message: 'OTP sent ✅',
-            otp: otp   // ✅ ADD THIS (for demo/testing)
-        });
-
+        await transporter.sendMail(mailOptions);
+        console.log(`✅ OTP sent to: ${email}`);
+        res.json({ message: 'OTP sent to your email ✅' });
     } catch (error) {
-        console.log("OTP ERROR:", error);
-        res.status(500).json({
-            message: 'OTP failed ❌',
-            error: error.message
-        });
+        console.log("❌ OTP Email Error:", error.message);
+        res.status(500).json({ message: 'Failed to send OTP ❌', error: error.message });
     }
 });
 
 // ==============================
 // 🔥 VERIFY OTP
 // ==============================
-app.get('/verify-otp', (req, res) => {
+app.get('/verify-otp', async (req, res) => {
     const { email, otp, username, password, firstName, lastName } = req.query;
 
     const record = otpStore[email];
 
     if (!record) {
-        return res.status(400).json({ message: "No OTP found ❌" });
+        return res.status(400).json({ message: "No OTP found. Please request a new one ❌" });
     }
 
     if (Date.now() > record.expiresAt) {
         delete otpStore[email];
-        return res.status(400).json({ message: "OTP expired ⏳" });
+        return res.status(400).json({ message: "OTP expired ⏳. Please request a new one." });
     }
 
     if (record.otp == otp) {
-
         const type = record.type;
         delete otpStore[email];
 
         if (type === "register") {
-
             if (!username || !password || !firstName || !lastName) {
                 return res.status(400).json({ message: "Missing fields ❌" });
             }
 
-            const checkSql = "SELECT * FROM users WHERE email = ?";
-            db.query(checkSql, [email], (err, result) => {
+            try {
+                const checkResult = await db.query(
+                    "SELECT * FROM users WHERE email = $1", [email]
+                );
 
-                if (result.length > 0) {
+                if (checkResult.rows.length > 0) {
                     return res.status(400).json({ message: "User already exists ❌" });
                 }
 
-                const sql = `
-                    INSERT INTO users (username, email, password_hash, first_name, last_name)
-                    VALUES (?, ?, ?, ?, ?)
-                `;
+                await db.query(
+                    `INSERT INTO users (username, email, password_hash, first_name, last_name)
+                     VALUES ($1, $2, $3, $4, $5)`,
+                    [username, email, password, firstName, lastName]
+                );
 
-                db.query(sql, [username, email, password, firstName, lastName], (err) => {
-                    if (err) {
-                        console.log(err);
-                        return res.status(500).json({ message: "Signup failed ❌" });
-                    }
+                return res.json({ message: "Account created successfully ✅" });
 
-                    return res.json({ message: "Account created ✅" });
-                });
-            });
+            } catch (err) {
+                console.log("DB Error:", err.message);
+                return res.status(500).json({ message: "Signup failed ❌" });
+            }
         }
 
         else if (type === "forgot") {
-            return res.json({ message: "OTP verified, reset allowed ✅" });
+            return res.json({ message: "OTP verified. You can now reset your password ✅" });
         }
 
     } else {
-        res.status(400).json({ message: "Invalid OTP ❌" });
+        return res.status(400).json({ message: "Invalid OTP ❌" });
     }
 });
 
 // ==============================
 // 🔵 LOGIN
 // ==============================
-app.get('/login', (req, res) => {
+app.get('/login', async (req, res) => {
     const { email, password } = req.query;
 
-    const sql = 'SELECT * FROM users WHERE email = ? AND password_hash = ?';
+    try {
+        const result = await db.query(
+            'SELECT * FROM users WHERE email = $1 AND password_hash = $2',
+            [email, password]
+        );
 
-    db.query(sql, [email, password], (err, result) => {
-        if (result.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(401).json({ message: 'Invalid credentials ❌' });
         }
 
-        const user = result[0];
+        const user = result.rows[0];
 
         const token = jwt.sign(
             { user_id: user.user_id, email: user.email },
@@ -169,31 +181,37 @@ app.get('/login', (req, res) => {
             token,
             user
         });
-    });
+
+    } catch (err) {
+        console.log("Login Error:", err.message);
+        res.status(500).json({ message: "Login failed ❌" });
+    }
 });
 
 // ==============================
 // 🔴 RESET PASSWORD
 // ==============================
-app.get('/reset-password', (req, res) => {
+app.get('/reset-password', async (req, res) => {
     const { email, newPassword } = req.query;
 
-    const sql = "UPDATE users SET password_hash = ? WHERE email = ?";
+    try {
+        await db.query(
+            "UPDATE users SET password_hash = $1 WHERE email = $2",
+            [newPassword, email]
+        );
 
-    db.query(sql, [newPassword, email], (err) => {
-        if (err) {
-            return res.status(500).json({ message: "Reset failed ❌" });
-        }
+        res.json({ message: "Password updated successfully ✅" });
 
-        res.json({ message: "Password updated ✅" });
-    });
+    } catch (err) {
+        console.log("Reset Error:", err.message);
+        res.status(500).json({ message: "Reset failed ❌" });
+    }
 });
 
 // ==============================
 // SERVER
 // ==============================
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT} 🚀`);
+    console.log(`🚀 Server running on port ${PORT}`);
 });
